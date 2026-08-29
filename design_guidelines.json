@@ -1,0 +1,164 @@
+{
+  "app_name": "Personal Vault",
+  "personality": "7 Dark-First Utility DARK",
+  "personality_one_liner": "A sharp, reactive, and highly legible command-center that prioritizes fast scanning and immediate hierarchy, illuminated by a warm amber accent.",
+  "color": {
+    "surface": "#121212",
+    "onSurface": "#F5F5F5",
+    "surfaceSecondary": "#1E1E1E",
+    "onSurfaceSecondary": "#E0E0E0",
+    "surfaceTertiary": "#2C2C2C",
+    "onSurfaceTertiary": "#B3B3B3",
+    "surfaceInverse": "#EAEAEA",
+    "onSurfaceInverse": "#121212",
+    "brand": "#FFBF00",
+    "brandPrimary": "#FFBF00",
+    "onBrandPrimary": "#121212",
+    "brandSecondary": "#CC9900",
+    "onBrandSecondary": "#121212",
+    "brandTertiary": "#4D3900",
+    "onBrandTertiary": "#FFDF80",
+    "success": "#32D74B",
+    "onSuccess": "#000000",
+    "warning": "#FF9F0A",
+    "onWarning": "#000000",
+    "error": "#FF453A",
+    "onError": "#FFFFFF",
+    "info": "#A3A3A3",
+    "onInfo": "#121212",
+    "border": "#2C2C2C",
+    "borderStrong": "#4A4A4A",
+    "divider": "#2A2A2A"
+  },
+  "typography": {
+    "displayFontFamily": "Barlow Condensed",
+    "textFontFamily": "Satoshi",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous intentional padding around content, clear grouping of related elements. Empty space is content but on purpose. Use 16px padding on edges.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 0,
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": false,
+    "do's": [
+      "Use solid surfaceSecondary and tonal separation instead of blur due to the high density of metrics."
+    ],
+    "dont's": [
+      "Avoid heavy blur that reduces readability of dense data screens."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "haptics": {
+    "events": {
+      "tab_press": "light",
+      "button_press": "medium",
+      "pin_entry": "light",
+      "pin_success": "success",
+      "pin_error": "error",
+      "toggle_switch": "light"
+    }
+  },
+  "screens": [
+    {
+      "name": "Beranda (Home)",
+      "purpose": "Dashboard overview providing quick summaries and actions for all modules.",
+      "states": {
+        "loading": "Skeleton loaders for cards",
+        "empty": "Should always display structural cards (Finance balance, Today's tasks). Show empty illustrations inside the cards if no data.",
+        "error": "Card-level error state with retry button"
+      },
+      "layout": "Vertical stack layout. Top: Welcome + Date. Section 1: Finance Summary (Balance + miniature trend line). Section 2: 'Hari Ini' (Today) displaying combined active Reminders/Alarms and pending Tasks. Section 3: Quick access chips to Vault and Files."
+    },
+    {
+      "name": "Keuangan (Finance)",
+      "purpose": "Detailed tracking of income, expenses, and category-wise charts.",
+      "states": {
+        "loading": "Spinner centered",
+        "empty": "Illustration of abstract finance dashboard + 'Belum ada transaksi' + Add button.",
+        "error": "Error message with retry button"
+      },
+      "layout": "Top: Segmented control (Income / Expense). Below: Large balance metric using condensed typography. Middle: Bar/Pie chart for categories. Bottom: List of recent transactions with high-contrast amounts (Success for Income, Error/Surface Inverse for Expense). Sticky bottom CTA to log a transaction."
+    },
+    {
+      "name": "Jadwal (Schedule)",
+      "purpose": "Calendar events, alarms, and tasks managed in a timeline.",
+      "states": {
+        "loading": "Spinner centered",
+        "empty": "Notepad illustration + 'Tidak ada jadwal hari ini' + Add button.",
+        "error": "Error message with retry button"
+      },
+      "layout": "Top: Horizontal week calendar. Middle: Segmented control (Jadwal, Tugas, Alarm). Bottom: Chronological feed of items. Alarms have a toggle switch. Tasks have a checkbox. Sticky bottom FAB (+)."
+    },
+    {
+      "name": "Brankas (Vault)",
+      "purpose": "Secure PIN-locked access to passwords and files.",
+      "states": {
+        "loading": "Spinner centered",
+        "empty": "Empty folder illustration + 'Brankas kosong' + Add button.",
+        "error": "Error message with retry button"
+      },
+      "layout": "Before auth: Clean PIN pad screen with masked input (circles). After auth: Segmented control (Sandi, Berkas). List of accounts grouped by service. For Files: Grid view of images/files. Uses brandTertiary tinted icons."
+    }
+  ],
+  "images": {
+    "empty_finance": {
+      "url": "https://images.unsplash.com/photo-1551288049-bebda4e38f71?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTF8MHwxfHNlYXJjaHwxfHxmaW5hbmNlJTIwdHJhY2tpbmclMjBkYXNoYm9hcmQlMjBhYnN0cmFjdHxlbnwwfHx8fDE3ODgwMDM3MzV8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Finance analytics graphs"
+    },
+    "empty_files": {
+      "url": "https://images.unsplash.com/photo-1699275303913-7ef75b618dd6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwxfHxlbXB0eSUyMGZvbGRlciUyMGRhcmt8ZW58MHx8fHwxNzg4MDAzNzM1fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Empty dark folders"
+    },
+    "empty_tasks": {
+      "url": "https://images.unsplash.com/photo-1644329843491-99edfc83de04?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzd8MHwxfHNlYXJjaHwxfHx0b2RvJTIwbGlzdCUyMG5vdGVwYWR8ZW58MHx8fHwxNzg4MDAzNzM1fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "To do list on a piece of paper"
+    },
+    "empty_alarms": {
+      "url": "https://images.unsplash.com/photo-1591436123200-5ccc6511c0e9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MjJ8MHwxfHNlYXJjaHwxfHxkaWdpdGFsJTIwY2xvY2slMjBhbGFybXxlbnwwfHx8fDE3ODgwMDM3MzV8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Black and red digital clock"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Design the app exclusively in Dark Mode per the 'Dark-First Utility DARK' personality. Do not implement a light mode toggle.",
+    "Use 'Barlow Condensed' for all major metrics, balances, and numbers to give it a tactical, dashboard-like feel.",
+    "Implement a bottom tab navigation with 4 tabs: Beranda (Home), Keuangan (Finance), Jadwal (Schedule), and Brankas (Vault).",
+    "When a user selects Brankas (Vault), the first screen must be a PIN lock entry. Only after successful PIN entry should the user see the Passwords and Files.",
+    "For the Keuangan (Finance) tab, ensure high-contrast typography for balance tracking and use segmented controls for Income/Expense.",
+    "Make sure all interactive elements are ≥44x44pt.",
+    "Render images properly using expo-image and implement a gradient-to-dark scrim pattern if text needs to sit over an image background.",
+    "Ensure the design remains 'sangat mudah digunakan' (very easy to use) by maintaining strict visual hierarchy and not overloading any single screen with unnecessary decorative chrome."
+  ]
+}
