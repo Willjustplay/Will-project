@@ -29,22 +29,16 @@
 6. File & image storage (Berkas) — upload images/documents, grid view, image viewer.
 
 ## Implemented (2026-06)
-- [x] Backend CRUD: transactions, events, tasks (PATCH toggle), reminders (PATCH toggle), vault (PUT edit), files (upload/list/raw/delete).
-- [x] Per-device isolation + soft delete.
-- [x] Object storage integration for files/images.
-- [x] Home dashboard: greeting, balance summary card, "Hari Ini" (events/reminders/tasks), quick-access chips.
-- [x] Finance: add sheet (amount, category chips, date picker), donut pie chart by category, income/expense filter, transaction list.
-- [x] Jadwal: week strip, segmented Jadwal/Tugas/Alarm, custom time & date pickers, task checkbox, alarm switch.
-- [x] Brankas: PIN create/confirm/unlock (SecureStore), locks on tab blur; Sandi accounts (reveal/copy/edit/delete), Berkas grid + upload (image picker + document picker) + image viewer.
-- [x] Toasts, haptics, reanimated entrance animations, keyboard-aware sheets.
-- [x] Full-stack testing passed (28/28 backend, all frontend flows).
+- [x] Backend CRUD: transactions (wallet_id), events, tasks, reminders, vault, wallets (auto-seed), files (folders), backup export/import.
+- [x] Per-device isolation + soft delete. Object storage for files/images.
+- [x] Home dashboard, Finance (wallets/kantong + pie chart), Jadwal/Tugas/Alarm, PIN vault (search), Berkas (folders + search), Cadangan Data (export/import), monthly 6-month trend chart.
+- [x] AI Assistant (Gemini 3 Flash via Emergent key): chat with data-aware context + natural-language transaction capture (/asisten). Chat history persisted per device. Entry via Beranda header button + banner.
+- [x] Testing: 49/49 backend, all frontend flows green (3 iterations).
 
 ## Backlog / Remaining
-- P1: Search & filter within vault and files.
-- P1: Monthly finance report / trend line on home.
-- P2: Biometric unlock (Face/Touch ID) for vault.
-- P2: Export/backup data.
-- P2: Categorize/folder the file storage.
+- P1: AI could also create events/tasks/reminders from natural language (currently transactions only).
+- P2: Biometric unlock for vault; export/import including binary files.
+- P2: Streaming AI responses on native (currently non-streaming for reliability).
 
 ## Next Tasks
 - Await user feedback; prioritize monthly finance insights and vault search.

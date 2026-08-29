@@ -7,7 +7,27 @@ export interface Transaction {
   category: string;
   note?: string;
   date: string;
+  wallet_id?: string;
   created_at: string;
+}
+
+export type WalletType = "cash" | "bank" | "ewallet";
+
+export interface Wallet {
+  id: string;
+  name: string;
+  type: WalletType;
+  created_at: string;
+}
+
+export const WALLET_TYPES: { key: WalletType; label: string; icon: string; color: string }[] = [
+  { key: "cash", label: "Tunai", icon: "cash", color: "#32D74B" },
+  { key: "bank", label: "Bank", icon: "business", color: "#0A84FF" },
+  { key: "ewallet", label: "Dompet Digital", icon: "phone-portrait", color: "#BF5AF2" },
+];
+
+export function walletTypeMeta(type: string) {
+  return WALLET_TYPES.find((w) => w.key === type) || WALLET_TYPES[0];
 }
 
 export interface EventItem {
@@ -52,8 +72,11 @@ export interface FileItem {
   content_type: string;
   size: number;
   kind: "image" | "file";
+  folder?: string;
   created_at: string;
 }
+
+export const FILE_FOLDERS = ["Dokumen", "Foto", "Kartu", "Lainnya"];
 
 export const EXPENSE_CATEGORIES = [
   { key: "Makanan", icon: "fast-food", color: "#FF9F0A" },

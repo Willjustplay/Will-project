@@ -23,7 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, spacing, font } from "@/src/theme/theme";
 import { storage } from "@/src/utils/storage";
 import { apiGet, apiPost, apiPut, apiDelete, uploadFile, fileSource } from "@/src/api/client";
-import { VaultAccount, FileItem } from "@/src/types";
+import { VaultAccount, FileItem, FILE_FOLDERS } from "@/src/types";
 import {
   Card,
   EmptyState,
@@ -78,6 +78,11 @@ export default function BrankasScreen() {
   // upload options + viewer
   const [uploadSheet, setUploadSheet] = useState(false);
   const [viewer, setViewer] = useState<{ uri: string; headers?: Record<string, string> } | null>(null);
+
+  // search & folders
+  const [search, setSearch] = useState("");
+  const [folderFilter, setFolderFilter] = useState("all");
+  const [uploadFolder, setUploadFolder] = useState("Dokumen");
 
   const checkPin = useCallback(async () => {
     const stored = await storage.secureGet<string>(PIN_KEY, "");
@@ -268,7 +273,7 @@ export default function BrankasScreen() {
   const doUpload = async (uri: string, name: string, type: string) => {
     setUploading(true);
     try {
-      await uploadFile(uri, name, type);
+      await uploadFile(uri, name, type, uploadFolder);
       haptic("success");
       toast.show("Berkas diunggah", "success");
       await loadContent();
@@ -296,6 +301,15 @@ export default function BrankasScreen() {
   };
 
   const cellSize = (width - spacing.lg * 2 - GRID_GAP * (COLS - 1)) / COLS;
+
+  const q = search.trim().toLowerCase();
+  const filteredAccounts = accounts.filter(
+    (a) => !q || a.service.toLowerCase().includes(q) || a.username.toLowerCase().includes(q)
+  );
+  const filteredFiles = files.filter((f) => {
+    const okFolder = folderFilter === "all" || (f.folder || "Lainnya") === folderFilter;
+    return okFolder && (!q || f.filename.toLowerCase().includes(q));
+  });
 
   // ---- render PIN gate ----
   if (pinExists === null) {
@@ -332,7 +346,10 @@ export default function BrankasScreen() {
         <Segmented
           testID="vault-tabs"
           value={tab}
-          onChange={(k) => setTab(k as any)}
+          onChange={(k) => {
+            setTab(k as any);
+            setSearch("");
+          }}
           options={[
             { key: "sandi", label: "Sandi" },
             { key: "berkas", label: "Berkas" },
@@ -348,6 +365,25 @@ export default function BrankasScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />}
         >
+          {tab === "sandi" && accounts.length > 0 && (
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={18} color={colors.onSurfaceTertiary} />
+              <TextInput
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Cari akun atau username..."
+                placeholderTextColor={colors.onSurfaceTertiary}
+                style={styles.searchInput}
+                testID="sandi-search"
+                autoCapitalize="none"
+              />
+              {search.length > 0 && (
+                <Pressable onPress={() => setSearch("")} hitSlop={8} testID="sandi-search-clear">
+                  <Ionicons name="close-circle" size={18} color={colors.onSurfaceTertiary} />
+                </Pressable>
+              )}
+            </View>
+          )}
           {tab === "sandi" &&
             (accounts.length === 0 ? (
               <EmptyState
@@ -357,7 +393,7 @@ export default function BrankasScreen() {
                 subtitle="Simpan akun & sandi berbagai aplikasi dengan aman"
               />
             ) : (
-              accounts.map((a, i) => (
+              filteredAccounts.map((a, i) => (
                 <Animated.View key={a.id} entering={FadeInDown.delay(i * 30)}>
                   <Card style={styles.accountCard} testID={`account-${a.id}`}>
                     <View style={styles.accountHead}>
@@ -395,6 +431,58 @@ export default function BrankasScreen() {
                 </Animated.View>
               ))
             ))}
+          {tab === "sandi" && accounts.length > 0 && filteredAccounts.length === 0 && (
+            <Text style={styles.noMatch}>Tidak ada hasil untuk &quot;{search}&quot;</Text>
+          )}
+
+          {tab === "berkas" && files.length > 0 && (
+            <>
+              <View style={styles.searchBar}>
+                <Ionicons name="search" size={18} color={colors.onSurfaceTertiary} />
+                <TextInput
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="Cari berkas..."
+                  placeholderTextColor={colors.onSurfaceTertiary}
+                  style={styles.searchInput}
+                  testID="berkas-search"
+                  autoCapitalize="none"
+                />
+                {search.length > 0 && (
+                  <Pressable onPress={() => setSearch("")} hitSlop={8} testID="berkas-search-clear">
+                    <Ionicons name="close-circle" size={18} color={colors.onSurfaceTertiary} />
+                  </Pressable>
+                )}
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.folderRow}
+                testID="folder-row"
+              >
+                <Pressable
+                  testID="folder-all"
+                  onPress={() => { haptic("light"); setFolderFilter("all"); }}
+                  style={[styles.folderChip, folderFilter === "all" && styles.folderChipActive]}
+                >
+                  <Text style={[styles.folderChipText, folderFilter === "all" && styles.folderChipTextActive]}>Semua</Text>
+                </Pressable>
+                {FILE_FOLDERS.map((f) => {
+                  const active = folderFilter === f;
+                  return (
+                    <Pressable
+                      key={f}
+                      testID={`folder-${f}`}
+                      onPress={() => { haptic("light"); setFolderFilter(f); }}
+                      style={[styles.folderChip, active && styles.folderChipActive]}
+                    >
+                      <Text style={[styles.folderChipText, active && styles.folderChipTextActive]}>{f}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </>
+          )}
 
           {tab === "berkas" &&
             (files.length === 0 ? (
@@ -406,7 +494,7 @@ export default function BrankasScreen() {
               />
             ) : (
               <View style={styles.grid}>
-                {files.map((f) => (
+                {filteredFiles.map((f) => (
                   <Pressable
                     key={f.id}
                     testID={`file-${f.id}`}
@@ -426,7 +514,10 @@ export default function BrankasScreen() {
                 ))}
               </View>
             ))}
-          {tab === "berkas" && files.length > 0 && <Text style={styles.hint}>Tekan lama untuk menghapus</Text>}
+          {tab === "berkas" && files.length > 0 && filteredFiles.length === 0 && (
+            <Text style={styles.noMatch}>Tidak ada berkas ditemukan</Text>
+          )}
+          {tab === "berkas" && filteredFiles.length > 0 && <Text style={styles.hint}>Tekan lama untuk menghapus</Text>}
         </ScrollView>
       )}
 
@@ -474,6 +565,23 @@ export default function BrankasScreen() {
 
       {/* Upload options sheet */}
       <Sheet visible={uploadSheet} onClose={() => setUploadSheet(false)} title="Unggah Berkas" testID="upload-sheet">
+        <Text style={styles.uploadFolderLabel}>Simpan ke folder</Text>
+        <View style={styles.folderPickRow}>
+          {FILE_FOLDERS.map((f) => {
+            const active = uploadFolder === f;
+            return (
+              <Pressable
+                key={f}
+                testID={`upload-folder-${f}`}
+                onPress={() => { haptic("light"); setUploadFolder(f); }}
+                style={[styles.folderPick, active && styles.folderPickActive]}
+              >
+                <Text style={[styles.folderPickText, active && styles.folderChipTextActive]}>{f}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={{ height: spacing.lg }} />
         <Pressable style={styles.uploadOption} onPress={pickImage} testID="upload-image">
           <View style={styles.uploadIcon}>
             <Ionicons name="image" size={24} color={colors.brand} />
@@ -521,6 +629,47 @@ const styles = StyleSheet.create({
   },
   headerTitle: { color: colors.onSurface, fontSize: font["3xl"], fontWeight: "800" },
   segmentWrap: { paddingHorizontal: spacing.lg, marginTop: spacing.md },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    height: 48,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.md,
+  },
+  searchInput: { flex: 1, color: colors.onSurface, fontSize: font.lg },
+  noMatch: { color: colors.onSurfaceTertiary, fontSize: font.base, textAlign: "center", paddingVertical: spacing.xl },
+  folderRow: { gap: spacing.sm, paddingRight: spacing.lg, paddingBottom: spacing.md },
+  folderChip: {
+    flexShrink: 0,
+    height: 36,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  folderChipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  folderChipText: { color: colors.onSurfaceTertiary, fontSize: font.base, fontWeight: "600" },
+  folderChipTextActive: { color: colors.onBrand, fontWeight: "700" },
+  uploadFolderLabel: { color: colors.onSurfaceTertiary, fontSize: font.sm, marginBottom: spacing.sm, fontWeight: "600" },
+  folderPickRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  folderPick: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  folderPickActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  folderPickText: { color: colors.onSurfaceTertiary, fontSize: font.base, fontWeight: "600" },
   accountCard: { marginBottom: spacing.md },
   accountHead: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   serviceIcon: {

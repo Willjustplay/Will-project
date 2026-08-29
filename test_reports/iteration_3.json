@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 3 (Gemini 3 Flash AI Assistant: chat + quick-capture parse + history) tested end-to-end on mobile viewport 390x844. Backend: 11/11 new pytest tests pass in /app/backend/tests/backend_test_iter3.py — 400 without X-Device-Id for /ai/chat & /ai/parse-transaction & /ai/history; POST /api/ai/chat returns non-empty reply and stores both user+assistant rows in ai_messages (verified via GET /api/ai/history len>=2, roles present, chronological); context-awareness confirmed (chat mentions Rp/saldo based on seeded income); DELETE /api/ai/history clears; POST /api/ai/parse-transaction correctly: 'beli makan siang 25rb pakai dompet digital' -> {type:expense, amount:25000, category:Makanan, wallet_id=Dompet Digital id}; 'gaji masuk 5jt ke bank' -> {type:income, amount:5_000_000, wallet_id=Bank id}; 'bayar listrik 150rb tunai' -> {type:expense, amount:150000, wallet_id=Tunai id}; device isolation for history (deviceA send does not leak to deviceB). Regression 38/38 (backend_test.py + backend_test_iter2.py) still passing => total 49/49. Frontend: home-ai-btn (sparkles) and home-ai-banner both navigate to /asisten; on /asisten all required testIDs present (ai-back, ai-clear, ai-mode, ai-mode-quick, ai-input, ai-send, ai-welcome); Ngobrol/Chat: 'Halo, siapa kamu?' produced a real assistant bubble (ai-assistant-msg, 293 chars, mentions 'Personal Vault' + saldo Rp0); Catat Cepat: 'beli kopi 20rb pakai tunai' yielded a proper ai-tx-card (Makanan, -Rp20.000, 29 Agu, Pengeluaran) with 3 wallet chips (ai-wallet-<id>); tapping ai-save-tx triggered toast 'Transaksi tersimpan' AND card switched to 'Tersimpan ke Tunai' (persistence confirmed by real POST /api/transactions, backend tests confirm the same endpoint saves correctly). Back nav returns to home with home-ai-btn present. No red-screen errors. Only benign RN-web console warnings (shadow*/pointerEvents deprecated in third-party libs + PanResponder onResponder* event-handler noise + TouchableMixin deprecation) — informational, no functional impact.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "console", "issues": ["RN-web informational warnings persist across iterations: 'shadow*' props deprecated (use boxShadow), 'props.pointerEvents' deprecated, 'onStartShouldSetResponder / onResponder*' unknown event handler noise from react-native-web PanResponder, 'TouchableMixin is deprecated' — all originate from third-party RN libs (reanimated / gesture-handler / navigation), no functional impact"]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/backend_test_iter2.py",
+    "/app/backend/tests/backend_test_iter3.py",
+    "/app/test_reports/pytest/pytest_iter3_ai.xml",
+    "/app/test_reports/pytest/pytest_regression3.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AI endpoints (/ai/chat, /ai/parse-transaction, /ai/history) all correctly gated on X-Device-Id via shared get_device() helper — returns 400 as expected.",
+    "build_snapshot() cleanly injects a compact per-device summary (saldo, per-wallet balances, recent 8 txns, today's events, open tasks, active reminders) into the system message — good for context grounding while keeping tokens low.",
+    "LlmChat is used non-streaming (await chat.send_message(...)) which is the correct choice for RN reliability.",
+    "parse-transaction post-processing is defensive: strips ``` fences, extracts the {..} slice, JSON-parses, coerces type/amount/category to whitelist, resolves wallet_name -> wallet_id with case-insensitive substring match, defaults date to today — 422 on unparsable which the frontend catches and shows friendly message.",
+    "ai_messages collection is only inserted after a successful reply (fail-fast on LLM error via 502) — no orphan user rows.",
+    "History is device-scoped (find({device_id: device})) and delete_many by same key — correct.",
+    "Frontend asisten.tsx correctly uses KeyboardAvoidingView, hides input send while busy, shows typing indicator, and clears via DELETE /ai/history + local state reset.",
+    "Home entry points (home-ai-btn + home-ai-banner) both route to /asisten with haptic feedback — good UX.",
+    "No hardcoded URLs — frontend uses EXPO_PUBLIC_BACKEND_URL, backend uses MONGO_URL/DB_NAME/EMERGENT_LLM_KEY from env."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test_iter3.py"
+  ],
+  "success_rate": {"backend": "100% (49/49: 28 iter1 + 10 iter2 + 11 iter3)", "frontend": "100% (all AI flows + entry points verified)"},
+  "seed_data_creation": "backend_test_iter3.py creates ephemeral TEST_ai_* device ids; TEST_ai_seed transaction and any ai_messages are cleaned up in module teardown (DELETE /ai/history). Frontend automation created one real transaction ('beli kopi 20rb pakai tunai' -> Makanan Rp20.000, Tunai) scoped only to the browser's device_id — safe to leave.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "AI endpoints require X-Device-Id (400 otherwise). Model: gemini-3-flash-preview via EMERGENT_LLM_KEY. Parse endpoint returns full tx object incl. resolved wallet_id (empty string if not disambiguated). Frontend AI screen at /asisten uses testIDs: ai-back, ai-clear, ai-mode, ai-mode-<key>, ai-welcome, ai-input, ai-send, ai-suggestion, ai-user-msg, ai-assistant-msg, ai-tx-card, ai-wallet-<walletId>, ai-save-tx. Chat replies typically arrive in 3–15s; parse endpoint 3–10s. Wait up to 45s in Playwright to be safe. Home entry points: home-ai-btn (header sparkles) + home-ai-banner (yellow gradient card). Note that chat history persists across app reloads and is auto-loaded on mount.",
+  "rca_of_issue": "N/A — no bugs found."
+}

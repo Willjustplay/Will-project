@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Header, HTTPException, UploadFile, File, Form, Query
+from fastapi import FastAPI, APIRouter, Header, HTTPException, UploadFile, File, Form, Query, Body
 from fastapi.responses import Response
 from fastapi.concurrency import run_in_threadpool
 from dotenv import load_dotenv
@@ -7,11 +7,13 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import uuid
+import json
 import requests
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime, timezone
+from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -101,6 +103,7 @@ class Transaction(BaseModel):
     category: str
     note: Optional[str] = ""
     date: str  # ISO date string (YYYY-MM-DD)
+    wallet_id: Optional[str] = ""
     created_at: str = Field(default_factory=now_iso)
 
 
@@ -110,6 +113,7 @@ class TransactionCreate(BaseModel):
     category: str
     note: Optional[str] = ""
     date: str
+    wallet_id: Optional[str] = ""
 
 
 class Event(BaseModel):
@@ -183,6 +187,18 @@ class VaultAccountCreate(BaseModel):
     username: str
     password: str
     note: Optional[str] = ""
+
+
+class Wallet(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    type: str  # cash | bank | ewallet
+    created_at: str = Field(default_factory=now_iso)
+
+
+class WalletCreate(BaseModel):
+    name: str
+    type: str
 
 
 # ---------------------------------------------------------------------------
@@ -378,10 +394,72 @@ async def delete_vault(item_id: str, x_device_id: str = Header(None)):
 
 
 # ---------------------------------------------------------------------------
+# Wallets (Kantong)
+# ---------------------------------------------------------------------------
+DEFAULT_WALLETS = [
+    {"name": "Tunai", "type": "cash"},
+    {"name": "Bank", "type": "bank"},
+    {"name": "Dompet Digital", "type": "ewallet"},
+]
+
+
+@api_router.get("/wallets", response_model=List[Wallet])
+async def list_wallets(x_device_id: str = Header(None)):
+    device = get_device(x_device_id)
+    docs = await db.wallets.find({"device_id": device, "deleted_at": None}).sort("created_at", 1).to_list(500)
+    if not docs:
+        seeded = []
+        for w in DEFAULT_WALLETS:
+            obj = Wallet(**w)
+            doc = obj.dict()
+            doc["device_id"] = device
+            doc["deleted_at"] = None
+            seeded.append(doc)
+        if seeded:
+            await db.wallets.insert_many([dict(d) for d in seeded])
+        docs = seeded
+    return [Wallet(**clean(d)) for d in docs]
+
+
+@api_router.post("/wallets", response_model=Wallet)
+async def create_wallet(input: WalletCreate, x_device_id: str = Header(None)):
+    device = get_device(x_device_id)
+    obj = Wallet(**input.dict())
+    doc = obj.dict()
+    doc["device_id"] = device
+    doc["deleted_at"] = None
+    await db.wallets.insert_one(doc)
+    return obj
+
+
+@api_router.put("/wallets/{item_id}", response_model=Wallet)
+async def update_wallet(item_id: str, input: WalletCreate, x_device_id: str = Header(None)):
+    device = get_device(x_device_id)
+    await db.wallets.update_one({"id": item_id, "device_id": device}, {"$set": input.dict()})
+    doc = await db.wallets.find_one({"id": item_id, "device_id": device})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Wallet not found")
+    return Wallet(**clean(doc))
+
+
+@api_router.delete("/wallets/{item_id}")
+async def delete_wallet(item_id: str, x_device_id: str = Header(None)):
+    device = get_device(x_device_id)
+    await db.wallets.update_one(
+        {"id": item_id, "device_id": device}, {"$set": {"deleted_at": now_iso()}}
+    )
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # Files (Berkas)
 # ---------------------------------------------------------------------------
 @api_router.post("/upload")
-async def upload_file(file: UploadFile = File(...), x_device_id: str = Header(None)):
+async def upload_file(
+    file: UploadFile = File(...),
+    folder: str = Form("Lainnya"),
+    x_device_id: str = Header(None),
+):
     device = get_device(x_device_id)
     data = await file.read()
     ext = ""
@@ -406,6 +484,7 @@ async def upload_file(file: UploadFile = File(...), x_device_id: str = Header(No
         "content_type": content_type,
         "size": len(data),
         "kind": kind,
+        "folder": folder or "Lainnya",
         "created_at": now_iso(),
         "deleted_at": None,
     }
@@ -443,6 +522,209 @@ async def delete_file(file_id: str, x_device_id: str = Header(None)):
         {"id": file_id, "device_id": device}, {"$set": {"deleted_at": now_iso()}}
     )
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Backup (export / import)
+# ---------------------------------------------------------------------------
+BACKUP_COLLECTIONS = ["transactions", "events", "tasks", "reminders", "vault", "wallets", "files"]
+
+
+@api_router.get("/backup/export")
+async def backup_export(x_device_id: str = Header(None)):
+    device = get_device(x_device_id)
+    data = {}
+    for coll in BACKUP_COLLECTIONS:
+        docs = await db[coll].find({"device_id": device, "deleted_at": None}).to_list(5000)
+        data[coll] = [clean(d) for d in docs]
+    return {
+        "app": "personal-vault",
+        "version": 1,
+        "exported_at": now_iso(),
+        "data": data,
+    }
+
+
+@api_router.post("/backup/import")
+async def backup_import(payload: dict = Body(...), x_device_id: str = Header(None)):
+    device = get_device(x_device_id)
+    data = payload.get("data", {})
+    counts = {}
+    for coll in BACKUP_COLLECTIONS:
+        items = data.get(coll, [])
+        n = 0
+        for item in items:
+            if not isinstance(item, dict) or "id" not in item:
+                continue
+            doc = dict(item)
+            doc.pop("_id", None)
+            doc["device_id"] = device
+            doc.setdefault("deleted_at", None)
+            await db[coll].replace_one(
+                {"id": doc["id"], "device_id": device}, doc, upsert=True
+            )
+            n += 1
+        counts[coll] = n
+    return {"ok": True, "imported": counts}
+
+
+# ---------------------------------------------------------------------------
+# AI Assistant (Gemini 3 Flash)
+# ---------------------------------------------------------------------------
+AI_MODEL = ("gemini", "gemini-3-flash-preview")
+EXPENSE_CATS = ["Makanan", "Transportasi", "Belanja", "Tagihan", "Hiburan", "Kesehatan", "Lainnya"]
+INCOME_CATS = ["Gaji", "Bonus", "Investasi", "Hadiah", "Lainnya"]
+
+
+class ChatIn(BaseModel):
+    message: str
+
+
+class ParseIn(BaseModel):
+    text: str
+
+
+def _rupiah(n: float) -> str:
+    return "Rp" + f"{int(round(n)):,}".replace(",", ".")
+
+
+async def build_snapshot(device: str) -> str:
+    txns = await db.transactions.find({"device_id": device, "deleted_at": None}).sort("date", -1).to_list(1000)
+    wallets = await db.wallets.find({"device_id": device, "deleted_at": None}).to_list(100)
+    events = await db.events.find({"device_id": device, "deleted_at": None}).to_list(500)
+    tasks = await db.tasks.find({"device_id": device, "deleted_at": None, "done": False}).to_list(500)
+    reminders = await db.reminders.find({"device_id": device, "deleted_at": None, "enabled": True}).to_list(500)
+
+    income = sum(t["amount"] for t in txns if t["type"] == "income")
+    expense = sum(t["amount"] for t in txns if t["type"] == "expense")
+    wname = {w["id"]: w["name"] for w in wallets}
+
+    lines = [f"Total saldo: {_rupiah(income - expense)} (pemasukan {_rupiah(income)}, pengeluaran {_rupiah(expense)})."]
+    if wallets:
+        wb = []
+        for w in wallets:
+            bal = sum((t["amount"] if t["type"] == "income" else -t["amount"]) for t in txns if t.get("wallet_id") == w["id"])
+            wb.append(f"{w['name']} {_rupiah(bal)}")
+        lines.append("Kantong: " + ", ".join(wb) + ".")
+    recent = txns[:8]
+    if recent:
+        rlist = [f"{t['date']} {('masuk' if t['type']=='income' else 'keluar')} {_rupiah(t['amount'])} {t['category']}" + (f" ({wname.get(t.get('wallet_id',''),'')})" if t.get("wallet_id") else "") for t in recent]
+        lines.append("Transaksi terbaru: " + "; ".join(rlist) + ".")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    te = [e for e in events if e["date"] == today]
+    if te:
+        lines.append("Jadwal hari ini: " + ", ".join(f"{e.get('time','')} {e['title']}" for e in te) + ".")
+    if tasks:
+        lines.append(f"Tugas belum selesai ({len(tasks)}): " + ", ".join(t["title"] for t in tasks[:8]) + ".")
+    if reminders:
+        lines.append("Alarm aktif: " + ", ".join(f"{r['time']} {r['label']}" for r in reminders[:8]) + ".")
+    return "\n".join(lines)
+
+
+@api_router.get("/ai/history")
+async def ai_history(x_device_id: str = Header(None)):
+    device = get_device(x_device_id)
+    docs = await db.ai_messages.find({"device_id": device}).sort("created_at", 1).to_list(200)
+    return [{"role": d["role"], "content": d["content"], "created_at": d["created_at"]} for d in docs]
+
+
+@api_router.delete("/ai/history")
+async def ai_history_clear(x_device_id: str = Header(None)):
+    device = get_device(x_device_id)
+    await db.ai_messages.delete_many({"device_id": device})
+    return {"ok": True}
+
+
+@api_router.post("/ai/chat")
+async def ai_chat(input: ChatIn, x_device_id: str = Header(None)):
+    device = get_device(x_device_id)
+    snapshot = await build_snapshot(device)
+    history = await db.ai_messages.find({"device_id": device}).sort("created_at", -1).to_list(8)
+    history = list(reversed(history))
+    convo = "\n".join(f"{'Pengguna' if h['role']=='user' else 'Asisten'}: {h['content']}" for h in history)
+
+    system_message = (
+        "Kamu adalah asisten pribadi ramah di aplikasi 'Personal Vault' berbahasa Indonesia. "
+        "Kamu membantu pengguna mengelola keuangan, jadwal, tugas, dan pengingat. "
+        "Jawab singkat, jelas, dan membantu dalam Bahasa Indonesia. Gunakan format Rupiah (Rp) untuk uang. "
+        "Berikan saran praktis berdasarkan data pengguna bila relevan. Jangan mengarang data yang tidak ada.\n\n"
+        f"=== DATA PENGGUNA SAAT INI ===\n{snapshot}\n"
+        + (f"\n=== PERCAKAPAN SEBELUMNYA ===\n{convo}\n" if convo else "")
+    )
+    try:
+        chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"chat-{device}", system_message=system_message).with_model(*AI_MODEL)
+        reply = await chat.send_message(UserMessage(text=input.message))
+    except Exception as e:
+        logger.error(f"AI chat error: {e}")
+        raise HTTPException(status_code=502, detail="Asisten AI sedang sibuk, coba lagi.")
+
+    ts = now_iso()
+    await db.ai_messages.insert_one({"device_id": device, "role": "user", "content": input.message, "created_at": ts})
+    await db.ai_messages.insert_one({"device_id": device, "role": "assistant", "content": reply, "created_at": now_iso()})
+    return {"reply": reply}
+
+
+@api_router.post("/ai/parse-transaction")
+async def ai_parse_transaction(input: ParseIn, x_device_id: str = Header(None)):
+    device = get_device(x_device_id)
+    wallets = await db.wallets.find({"device_id": device, "deleted_at": None}).to_list(100)
+    wallet_names = [w["name"] for w in wallets]
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    system_message = (
+        "Kamu adalah pengurai transaksi keuangan. Ubah kalimat pengguna (Bahasa Indonesia) menjadi SATU objek JSON. "
+        "Balas HANYA JSON tanpa penjelasan, tanpa markdown. Skema: "
+        '{"type":"income|expense","amount":number,"category":string,"wallet_name":string|null,"note":string,"date":"YYYY-MM-DD"}. '
+        f"amount dalam Rupiah tanpa titik/koma (contoh '25rb'->25000, '1.5jt'->1500000). "
+        f"Untuk pengeluaran gunakan kategori dari: {EXPENSE_CATS}. Untuk pemasukan dari: {INCOME_CATS}. "
+        f"Pilih kategori paling sesuai; jika ragu gunakan 'Lainnya'. "
+        f"wallet_name harus cocok salah satu dari kantong pengguna: {wallet_names} (atau null jika tidak disebutkan). "
+        f"date default hari ini ({today}) jika tidak disebutkan. note isi ringkasan singkat."
+    )
+    try:
+        chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"parse-{device}", system_message=system_message).with_model(*AI_MODEL)
+        raw = await chat.send_message(UserMessage(text=input.text))
+    except Exception as e:
+        logger.error(f"AI parse error: {e}")
+        raise HTTPException(status_code=502, detail="Asisten AI sedang sibuk, coba lagi.")
+
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:]
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1:
+        raise HTTPException(status_code=422, detail="Tidak dapat memahami kalimat. Coba lebih spesifik.")
+    try:
+        parsed = json.loads(cleaned[start : end + 1])
+    except Exception:
+        raise HTTPException(status_code=422, detail="Tidak dapat memahami kalimat. Coba lebih spesifik.")
+
+    t_type = "income" if str(parsed.get("type", "expense")).lower().startswith("income") else "expense"
+    try:
+        amount = float(parsed.get("amount") or 0)
+    except Exception:
+        amount = 0
+    cats = INCOME_CATS if t_type == "income" else EXPENSE_CATS
+    category = parsed.get("category") if parsed.get("category") in cats else "Lainnya"
+    wallet_id = ""
+    wn = parsed.get("wallet_name")
+    if wn:
+        for w in wallets:
+            if w["name"].lower() == str(wn).lower() or str(wn).lower() in w["name"].lower():
+                wallet_id = w["id"]
+                break
+    date = parsed.get("date") or today
+    return {
+        "type": t_type,
+        "amount": amount,
+        "category": category,
+        "wallet_id": wallet_id,
+        "note": parsed.get("note") or "",
+        "date": date,
+    }
 
 
 app.include_router(api_router)

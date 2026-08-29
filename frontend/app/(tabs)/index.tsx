@@ -2,13 +2,14 @@ import React, { useCallback, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { LineChart } from "react-native-gifted-charts";
 import { useFocusEffect, useRouter } from "expo-router";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, spacing, font } from "@/src/theme/theme";
 import { apiGet } from "@/src/api/client";
 import { Transaction, EventItem, TaskItem, Reminder } from "@/src/types";
-import { formatRupiah, formatDateLong, todayISO } from "@/src/utils/format";
+import { formatRupiah, formatDateLong, todayISO, MONTHS_SHORT } from "@/src/utils/format";
 import { Card, EmptyState, IconChip, LoadingView, haptic } from "@/src/components/ui";
 import { useToast } from "@/src/components/Toast";
 
@@ -80,6 +81,31 @@ export default function BerandaScreen() {
 
   const hasToday = todayEvents.length > 0 || pendingTasks.length > 0 || activeReminders.length > 0;
 
+  // Monthly trend: last 6 months income vs expense
+  const monthly = useMemo(() => {
+    const now = new Date();
+    const months: { ym: string; label: string; income: number; expense: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      months.push({ ym, label: MONTHS_SHORT[d.getMonth()], income: 0, expense: 0 });
+    }
+    const idx = new Map(months.map((m, i) => [m.ym, i]));
+    txns.forEach((t) => {
+      const ym = t.date.slice(0, 7);
+      const i = idx.get(ym);
+      if (i !== undefined) {
+        if (t.type === "income") months[i].income += t.amount;
+        else months[i].expense += t.amount;
+      }
+    });
+    return months;
+  }, [txns]);
+
+  const hasTrend = monthly.some((m) => m.income > 0 || m.expense > 0);
+  const incomeLine = monthly.map((m) => ({ value: m.income, label: m.label }));
+  const expenseLine = monthly.map((m) => ({ value: m.expense, label: m.label }));
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {loading ? (
@@ -90,8 +116,51 @@ export default function BerandaScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />}
         >
-          <Text style={styles.greeting}>{greeting} 👋</Text>
-          <Text style={styles.date}>{formatDateLong(today)}</Text>
+          <View style={styles.topRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.greeting}>{greeting} 👋</Text>
+              <Text style={styles.date}>{formatDateLong(today)}</Text>
+            </View>
+            <View style={styles.headerBtns}>
+              <Pressable
+                style={styles.aiHeaderBtn}
+                onPress={() => { haptic("light"); router.push("/asisten"); }}
+                testID="home-ai-btn"
+                hitSlop={8}
+              >
+                <Ionicons name="sparkles" size={20} color={colors.onBrand} />
+              </Pressable>
+              <Pressable
+                style={styles.gearBtn}
+                onPress={() => { haptic("light"); router.push("/pengaturan"); }}
+                testID="home-settings"
+                hitSlop={8}
+              >
+                <Ionicons name="cloud-outline" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+          </View>
+
+          {/* AI Assistant banner */}
+          <Animated.View entering={FadeInDown.delay(30)}>
+            <Pressable onPress={() => { haptic("medium"); router.push("/asisten"); }} testID="home-ai-banner">
+              <LinearGradient
+                colors={[colors.brandTertiary, colors.surfaceSecondary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.aiBanner}
+              >
+                <View style={styles.aiBannerIcon}>
+                  <Ionicons name="sparkles" size={22} color={colors.onBrand} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.aiBannerTitle}>Asisten AI</Text>
+                  <Text style={styles.aiBannerSub}>Tanya apa saja atau catat transaksi dengan bahasa biasa</Text>
+                </View>
+                <Ionicons name="arrow-forward-circle" size={26} color={colors.brand} />
+              </LinearGradient>
+            </Pressable>
+          </Animated.View>
 
           {/* Finance summary */}
           <Animated.View entering={FadeInDown.delay(50)}>
@@ -122,6 +191,46 @@ export default function BerandaScreen() {
               </LinearGradient>
             </Pressable>
           </Animated.View>
+
+          {/* Monthly trend */}
+          {hasTrend && (
+            <Animated.View entering={FadeInDown.delay(90)}>
+              <View style={styles.trendCard} testID="home-trend">
+                <View style={styles.trendHead}>
+                  <Text style={styles.trendTitle}>Tren 6 Bulan</Text>
+                  <View style={styles.trendLegend}>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: colors.success }]} />
+                      <Text style={styles.legendText}>Masuk</Text>
+                    </View>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: colors.error }]} />
+                      <Text style={styles.legendText}>Keluar</Text>
+                    </View>
+                  </View>
+                </View>
+                <LineChart
+                  data={incomeLine}
+                  data2={expenseLine}
+                  height={140}
+                  initialSpacing={12}
+                  spacing={48}
+                  thickness={2}
+                  color1={colors.success}
+                  color2={colors.error}
+                  dataPointsColor1={colors.success}
+                  dataPointsColor2={colors.error}
+                  hideRules
+                  yAxisThickness={0}
+                  xAxisThickness={0}
+                  xAxisLabelTextStyle={{ color: colors.onSurfaceTertiary, fontSize: 11 }}
+                  hideYAxisText
+                  curved
+                  adjustToWidth
+                />
+              </View>
+            </Animated.View>
+          )}
 
           {/* Hari Ini */}
           <Animated.View entering={FadeInDown.delay(120)}>
@@ -197,8 +306,63 @@ export default function BerandaScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
+  topRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: spacing.lg },
+  headerBtns: { flexDirection: "row", gap: spacing.sm },
+  aiHeaderBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.md,
+    backgroundColor: colors.brand,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  gearBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  aiBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.brandSecondary,
+    marginBottom: spacing.lg,
+  },
+  aiBannerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.brand,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  aiBannerTitle: { color: colors.onSurface, fontSize: font.lg, fontWeight: "800" },
+  aiBannerSub: { color: colors.onSurfaceSecondary, fontSize: font.sm, marginTop: 2 },
   greeting: { color: colors.onSurface, fontSize: font["2xl"], fontWeight: "800" },
-  date: { color: colors.onSurfaceTertiary, fontSize: font.base, marginTop: 2, marginBottom: spacing.lg },
+  date: { color: colors.onSurfaceTertiary, fontSize: font.base, marginTop: 2 },
+  trendCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.lg,
+    overflow: "hidden",
+  },
+  trendHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg },
+  trendTitle: { color: colors.onSurface, fontSize: font.lg, fontWeight: "700" },
+  trendLegend: { flexDirection: "row", gap: spacing.md },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { color: colors.onSurfaceTertiary, fontSize: font.sm },
   financeCard: { borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.border },
   financeTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   financeLabel: { color: colors.onSurfaceTertiary, fontSize: font.base, fontWeight: "600" },

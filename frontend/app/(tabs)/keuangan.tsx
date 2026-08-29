@@ -7,7 +7,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, spacing, font } from "@/src/theme/theme";
 import { apiGet, apiPost, apiDelete } from "@/src/api/client";
-import { Transaction, TxType, EXPENSE_CATEGORIES, INCOME_CATEGORIES, categoryMeta } from "@/src/types";
+import { Transaction, TxType, Wallet, WALLET_TYPES, walletTypeMeta, EXPENSE_CATEGORIES, INCOME_CATEGORIES, categoryMeta } from "@/src/types";
 import { formatRupiah, formatDateShort, todayISO } from "@/src/utils/format";
 import { Card, EmptyState, Fab, Field, PrimaryButton, Segmented, LoadingView, haptic } from "@/src/components/ui";
 import { Sheet } from "@/src/components/Sheet";
@@ -18,22 +18,33 @@ export default function KeuanganScreen() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const [txns, setTxns] = useState<Transaction[]>([]);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [selWallet, setSelWallet] = useState<string>("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<TxType>("expense");
   const [sheet, setSheet] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [walletSheet, setWalletSheet] = useState(false);
+  const [walletName, setWalletName] = useState("");
+  const [walletType, setWalletType] = useState("cash");
+  const [savingWallet, setSavingWallet] = useState(false);
 
   const [type, setType] = useState<TxType>("expense");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("Makanan");
   const [note, setNote] = useState("");
   const [date, setDate] = useState(todayISO());
+  const [formWallet, setFormWallet] = useState<string>("");
 
   const load = useCallback(async () => {
     try {
-      const data = await apiGet<Transaction[]>("/transactions");
+      const [data, wl] = await Promise.all([
+        apiGet<Transaction[]>("/transactions"),
+        apiGet<Wallet[]>("/wallets"),
+      ]);
       setTxns(data);
+      setWallets(wl);
     } catch (e) {
       toast.show("Gagal memuat transaksi", "error");
     } finally {
@@ -53,14 +64,25 @@ export default function KeuanganScreen() {
     setRefreshing(false);
   }, [load]);
 
+  const scopedTxns = useMemo(
+    () => (selWallet === "all" ? txns : txns.filter((t) => t.wallet_id === selWallet)),
+    [txns, selWallet]
+  );
+
   const { income, expense, balance } = useMemo(() => {
     let inc = 0;
     let exp = 0;
-    txns.forEach((t) => (t.type === "income" ? (inc += t.amount) : (exp += t.amount)));
+    scopedTxns.forEach((t) => (t.type === "income" ? (inc += t.amount) : (exp += t.amount)));
     return { income: inc, expense: exp, balance: inc - exp };
-  }, [txns]);
+  }, [scopedTxns]);
 
-  const filtered = useMemo(() => txns.filter((t) => t.type === filter), [txns, filter]);
+  const walletBalance = useCallback(
+    (id: string) =>
+      txns.filter((t) => t.wallet_id === id).reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0),
+    [txns]
+  );
+
+  const filtered = useMemo(() => scopedTxns.filter((t) => t.type === filter), [scopedTxns, filter]);
 
   const pieData = useMemo(() => {
     const map = new Map<string, number>();
@@ -80,6 +102,7 @@ export default function KeuanganScreen() {
     setCategory("Makanan");
     setNote("");
     setDate(todayISO());
+    setFormWallet(selWallet !== "all" ? selWallet : wallets[0]?.id || "");
   };
 
   const openAdd = () => {
@@ -95,7 +118,7 @@ export default function KeuanganScreen() {
     }
     setSaving(true);
     try {
-      await apiPost("/transactions", { type, amount: amt, category, note, date });
+      await apiPost("/transactions", { type, amount: amt, category, note, date, wallet_id: formWallet });
       haptic("success");
       toast.show("Transaksi disimpan", "success");
       setSheet(false);
@@ -104,6 +127,27 @@ export default function KeuanganScreen() {
       toast.show("Gagal menyimpan", "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveWallet = async () => {
+    if (!walletName.trim()) {
+      toast.show("Masukkan nama kantong", "error");
+      return;
+    }
+    setSavingWallet(true);
+    try {
+      await apiPost("/wallets", { name: walletName.trim(), type: walletType });
+      haptic("success");
+      toast.show("Kantong ditambahkan", "success");
+      setWalletSheet(false);
+      setWalletName("");
+      setWalletType("cash");
+      await load();
+    } catch {
+      toast.show("Gagal menambah kantong", "error");
+    } finally {
+      setSavingWallet(false);
     }
   };
 
@@ -155,6 +199,42 @@ export default function KeuanganScreen() {
               </View>
             </View>
           </Card>
+
+          <View style={{ height: spacing.lg }} />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.walletRowContent}
+            testID="wallet-row"
+          >
+            <Pressable
+              testID="wallet-chip-all"
+              onPress={() => { haptic("light"); setSelWallet("all"); }}
+              style={[styles.walletChip, selWallet === "all" && styles.walletChipActive]}
+            >
+              <Ionicons name="albums" size={16} color={selWallet === "all" ? colors.onBrand : colors.onSurfaceTertiary} />
+              <Text style={[styles.walletChipText, selWallet === "all" && styles.walletChipTextActive]}>Semua</Text>
+            </Pressable>
+            {wallets.map((w) => {
+              const active = selWallet === w.id;
+              const meta = walletTypeMeta(w.type);
+              return (
+                <Pressable
+                  key={w.id}
+                  testID={`wallet-chip-${w.id}`}
+                  onPress={() => { haptic("light"); setSelWallet(w.id); }}
+                  style={[styles.walletChip, active && styles.walletChipActive]}
+                >
+                  <Ionicons name={meta.icon as any} size={16} color={active ? colors.onBrand : meta.color} />
+                  <Text style={[styles.walletChipText, active && styles.walletChipTextActive]}>{w.name}</Text>
+                </Pressable>
+              );
+            })}
+            <Pressable testID="wallet-add-chip" onPress={() => { haptic("light"); setWalletSheet(true); }} style={styles.walletAddChip}>
+              <Ionicons name="add" size={18} color={colors.brand} />
+              <Text style={styles.walletAddText}>Kantong</Text>
+            </Pressable>
+          </ScrollView>
 
           <View style={{ height: spacing.lg }} />
           <Segmented
@@ -230,6 +310,7 @@ export default function KeuanganScreen() {
                       <Text style={styles.txnCat}>{t.category}</Text>
                       <Text style={styles.txnMeta}>
                         {formatDateShort(t.date)}
+                        {t.wallet_id ? ` · ${wallets.find((w) => w.id === t.wallet_id)?.name || ""}` : ""}
                         {t.note ? ` · ${t.note}` : ""}
                       </Text>
                     </View>
@@ -294,10 +375,59 @@ export default function KeuanganScreen() {
           })}
         </View>
         <View style={{ height: spacing.md }} />
+        <Text style={styles.fieldLabel}>Kantong</Text>
+        <View style={styles.catGrid}>
+          {wallets.map((w) => {
+            const active = w.id === formWallet;
+            const meta = walletTypeMeta(w.type);
+            return (
+              <Pressable
+                key={w.id}
+                testID={`form-wallet-${w.id}`}
+                onPress={() => { haptic("light"); setFormWallet(w.id); }}
+                style={[styles.catChip, active && { backgroundColor: meta.color + "33", borderColor: meta.color }]}
+              >
+                <Ionicons name={meta.icon as any} size={16} color={active ? meta.color : colors.onSurfaceTertiary} />
+                <Text style={[styles.catChipText, active && { color: colors.onSurface }]}>{w.name}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={{ height: spacing.md }} />
         <DateField label="Tanggal" value={date} onChange={setDate} testID="txn-date" />
         <Field label="Catatan (opsional)" icon="create-outline" value={note} onChangeText={setNote} placeholder="Tambah catatan" testID="txn-note" />
         <View style={{ height: spacing.sm }} />
         <PrimaryButton label="Simpan Transaksi" onPress={save} loading={saving} testID="txn-save" />
+      </Sheet>
+
+      <Sheet visible={walletSheet} onClose={() => setWalletSheet(false)} title="Tambah Kantong" testID="wallet-sheet">
+        <Field
+          label="Nama Kantong"
+          icon="wallet-outline"
+          value={walletName}
+          onChangeText={setWalletName}
+          placeholder="Contoh: DANA, OVO, BCA"
+          testID="wallet-name"
+        />
+        <Text style={styles.fieldLabel}>Jenis</Text>
+        <View style={styles.catGrid}>
+          {WALLET_TYPES.map((wt) => {
+            const active = wt.key === walletType;
+            return (
+              <Pressable
+                key={wt.key}
+                testID={`wallet-type-${wt.key}`}
+                onPress={() => { haptic("light"); setWalletType(wt.key); }}
+                style={[styles.catChip, active && { backgroundColor: wt.color + "33", borderColor: wt.color }]}
+              >
+                <Ionicons name={wt.icon as any} size={16} color={active ? wt.color : colors.onSurfaceTertiary} />
+                <Text style={[styles.catChipText, active && { color: colors.onSurface }]}>{wt.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={{ height: spacing.lg }} />
+        <PrimaryButton label="Simpan Kantong" onPress={saveWallet} loading={savingWallet} testID="wallet-save" />
       </Sheet>
     </View>
   );
@@ -308,6 +438,35 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, paddingTop: spacing.sm },
   headerTitle: { color: colors.onSurface, fontSize: font["3xl"], fontWeight: "800" },
   balanceCard: { backgroundColor: colors.surfaceSecondary },
+  walletRowContent: { gap: spacing.sm, paddingRight: spacing.lg },
+  walletChip: {
+    flexShrink: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    height: 40,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  walletChipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  walletChipText: { color: colors.onSurfaceTertiary, fontSize: font.base, fontWeight: "600" },
+  walletChipTextActive: { color: colors.onBrand, fontWeight: "700" },
+  walletAddChip: {
+    flexShrink: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    height: 40,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.brand,
+    borderStyle: "dashed",
+  },
+  walletAddText: { color: colors.brand, fontSize: font.base, fontWeight: "700" },
   balanceLabel: { color: colors.onSurfaceTertiary, fontSize: font.base, fontWeight: "600" },
   balanceValue: { fontSize: font["4xl"], fontWeight: "800", marginTop: spacing.xs, letterSpacing: -1 },
   balanceRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.lg },

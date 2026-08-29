@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 2 (wallets/kantong, file folders, vault search, home 6-month trend, backup export/import) tested end-to-end. Backend: 10/10 new pytest tests pass in /app/backend/tests/backend_test_iter2.py (wallets auto-seed 3 defaults, POST/PUT/DELETE, device isolation with 404 cross-device PUT; transactions persist wallet_id; /api/upload folder form field + folder returned by /api/files + raw download via ?token=; /api/backup/export shape validation with 7 collections and seeded data present; /api/backup/import upsert-by-id, cross-device restore, idempotent). All 28 regression tests in backend_test.py still pass (38/38 backend). Frontend (mobile viewport 390x844): Home Cadangan icon → /pengaturan renders Simpan Data + Muat Data buttons; Keuangan renders wallet chip row (Semua + 3 auto-seeded wallets Tunai/Bank/Dompet Digital + '+ Kantong' add chip); Add Kantong sheet works (toast 'Kantong ditambahkan', chip count grows to 5); Add Transaksi sheet shows wallet selector (form-wallet-*) and saves with pie chart Makanan 100%, balance updates to Rp-25.000, toast 'Transaksi disimpan'; Home now shows 'Tren 6 Bulan' line chart (home-trend) after tx exists; Brankas PIN gate creates 1234 then confirms → unlocked; Sandi tab add account works, sandi-search filters (shows 'Tidak ada hasil' for xyz_no_match), edit via PUT persists new service name; switching to Berkas tab and tapping vault-fab opens Unggah Berkas sheet with folder chips (Dokumen/Foto/Kartu/Lainnya) and both upload-image + upload-document options. No React Native red-screen errors. Only benign RN-web console warnings (shadow*/pointerEvents deprecated in third-party libs — no functional impact).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "console", "issues": ["React Native web warnings 'shadow*' deprecated (use boxShadow) and props.pointerEvents deprecated — originate from third-party RN libs (reanimated/gesture-handler/navigation) rendered on web. Informational only. Also: 'Unknown event handler property onStartShouldSetResponder / onResponderGrant / onPressOut' warnings from react-native-web PanResponder inside modal — informational."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/backend_test_iter2.py",
+    "/app/test_reports/pytest/pytest_iter3.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Wallet auto-seed correctly gated on empty list per device and is idempotent (second GET returns the same 3 ids).",
+    "Cross-device PUT /wallets/{id} correctly returns 404 (device_id filter enforced).",
+    "backup/import uses replace_one upsert keyed on {id, device_id} — idempotent and cross-device safe. Preserves original ids so DST device is a true clone.",
+    "get_file_raw still supports ?token=<device_id> fallback for web preview (<img> tags cannot send X-Device-Id header). Device equality check remains the only auth, matching the no-login spec.",
+    "Backend excludes MongoDB _id via clean() in all responses (list_files, backup export data arrays included).",
+    "Frontend Brankas correctly hides sandi-search when accounts.length === 0 and hides berkas-search/folder-row when files.length === 0 — expected UX behavior (nothing to search)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (38/38)", "frontend": "100% (all iteration-2 flows verified)"},
+  "seed_data_creation": "All pytest data uses TEST_-prefixed strings on ephemeral device ids (TEST_wlt_*, TEST_bkp_src_*, TEST_bkp_dst_*) that are never used by the frontend; wallets are soft-deleted where possible. Frontend automation created one TEST_Instagram_Edited vault account and one Rp25.000 Makanan transaction on the automation browser's device_id — safe to leave; scoped only to that browser session.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Category testIDs use the exact key from types.ts (Title-Case): cat-Makanan, cat-Transportasi, ... (NOT lowercase). Wallet chip testIDs: wallet-chip-all + wallet-chip-<uuid>. Form wallet chips inside Tambah Transaksi sheet: form-wallet-<uuid>. Upload folders: upload-folder-Dokumen/Foto/Kartu/Lainnya. Berkas search bar and folder chip row only render when files.length > 0 (by design). Sandi search bar only renders when accounts.length > 0. Vault segmented control tab switch: click text 'Berkas' inside [data-testid='vault-tabs'] (or use get_by_text). Home trend chart testID='home-trend' only shows when transactions exist. Frontend env var is EXPO_PUBLIC_BACKEND_URL (already handled).",
+  "rca_of_issue": "N/A — no bugs found in iteration 2 features or in regression coverage."
+}

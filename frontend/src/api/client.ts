@@ -71,8 +71,34 @@ export async function apiDelete(path: string): Promise<void> {
   if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`);
 }
 
+// ---- AI assistant ----
+export interface ParsedTx {
+  type: "income" | "expense";
+  amount: number;
+  category: string;
+  wallet_id: string;
+  note: string;
+  date: string;
+}
+
+export async function aiChat(message: string): Promise<{ reply: string }> {
+  return apiPost("/ai/chat", { message });
+}
+
+export async function aiParse(text: string): Promise<ParsedTx> {
+  return apiPost("/ai/parse-transaction", { text });
+}
+
+export async function aiHistory(): Promise<{ role: string; content: string; created_at: string }[]> {
+  return apiGet("/ai/history");
+}
+
+export async function aiClearHistory(): Promise<void> {
+  return apiDelete("/ai/history");
+}
+
 // Multipart upload — handles both native and web runtimes.
-export async function uploadFile(uri: string, name: string, type: string): Promise<any> {
+export async function uploadFile(uri: string, name: string, type: string, folder = "Lainnya"): Promise<any> {
   const form = new FormData();
   if (Platform.OS === "web") {
     const blob = await (await fetch(uri)).blob();
@@ -80,6 +106,7 @@ export async function uploadFile(uri: string, name: string, type: string): Promi
   } else {
     form.append("file", { uri, name, type } as any);
   }
+  form.append("folder", folder);
   const deviceId = await getDeviceId();
   const res = await fetch(`${API}/upload`, {
     method: "POST",
