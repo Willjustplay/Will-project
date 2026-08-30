@@ -8,9 +8,12 @@ import * as DocumentPicker from "expo-document-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, spacing, font } from "@/src/theme/theme";
 import { apiGet, apiPost } from "@/src/api/client";
+import { storage } from "@/src/utils/storage";
 import { Card, PrimaryButton, LoadingView, haptic } from "@/src/components/ui";
 import { useToast } from "@/src/components/Toast";
 import { formatDateLong, todayISO } from "@/src/utils/format";
+
+const SAF_DIR_KEY = "pv_saf_download_dir";
 
 export default function PengaturanScreen() {
   const insets = useSafeAreaInsets();
